@@ -100,8 +100,8 @@ const EmployeeForm: React.FC = () => {
 
   const generateGravatarUrl = (email: string) => {
     if (!email) return '';
-    const hash = require('crypto').createHash('md5').update(email.toLowerCase().trim()).digest('hex');
-    return `https://www.gravatar.com/avatar/${hash}?s=200&d=identicon`;
+    const hash = require('crypto').createHash('sha256').update(email.toLowerCase().trim()).digest('hex');
+    return `https://www.gravatar.com/avatar/${hash}`;
   };
 
   return (

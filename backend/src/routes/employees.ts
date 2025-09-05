@@ -2,13 +2,14 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { EmployeeService } from '../services/employeeService';
 import { auth, adminAuth } from '../middleware/auth';
+import {Request, Response} from 'express';
 
 const router = express.Router();
 
 // @route   GET /api/employees
 // @desc    Get all employees
 // @access  Private
-router.get('/', auth, async (req, res) => {
+router.get('/', auth, async (req: Request, res: Response) => {
   try {
     const { department, isActive, managerId } = req.query;
     const filters = {
@@ -28,7 +29,7 @@ router.get('/', auth, async (req, res) => {
 // @route   GET /api/employees/:id
 // @desc    Get employee by ID
 // @access  Private
-router.get('/:id', auth, async (req, res) => {
+router.get('/:id', auth, async (req: Request, res: Response) => {
   try {
     const employee = await EmployeeService.getEmployeeById(req.params.id);
     res.json(employee);
@@ -51,7 +52,7 @@ router.post('/', [
   body('department').notEmpty().withMessage('Department is required'),
   body('salary').isNumeric().withMessage('Salary must be a number'),
   body('hireDate').optional().isISO8601().withMessage('Invalid hire date')
-], async (req, res) => {
+], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -77,7 +78,7 @@ router.put('/:id', [
   body('position').optional().notEmpty().withMessage('Position cannot be empty'),
   body('department').optional().notEmpty().withMessage('Department cannot be empty'),
   body('salary').optional().isNumeric().withMessage('Salary must be a number')
-], async (req, res) => {
+], async (req: Request, res: Response) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -95,7 +96,7 @@ router.put('/:id', [
 // @route   DELETE /api/employees/:id
 // @desc    Delete employee
 // @access  Private (Admin only)
-router.delete('/:id', adminAuth, async (req, res) => {
+router.delete('/:id', adminAuth, async (req: Request, res: Response) => {
   try {
     const result = await EmployeeService.deleteEmployee(req.params.id);
     res.json(result);
@@ -108,7 +109,7 @@ router.delete('/:id', adminAuth, async (req, res) => {
 // @route   GET /api/employees/hierarchy/tree
 // @desc    Get organizational hierarchy tree
 // @access  Private
-router.get('/hierarchy/tree', auth, async (req, res) => {
+router.get('/hierarchy/tree', auth, async (req: Request, res: Response) => {
   try {
     const hierarchyTree = await EmployeeService.getHierarchyTree();
     res.json(hierarchyTree);
@@ -121,7 +122,7 @@ router.get('/hierarchy/tree', auth, async (req, res) => {
 // @route   GET /api/employees/departments/list
 // @desc    Get all departments
 // @access  Private
-router.get('/departments/list', auth, async (req, res) => {
+router.get('/departments/list', auth, async (req: Request, res: Response) => {
   try {
     const departments = await EmployeeService.getDepartments();
     res.json(departments);
@@ -134,7 +135,7 @@ router.get('/departments/list', auth, async (req, res) => {
 // @route   GET /api/employees/managers/list
 // @desc    Get all managers
 // @access  Private
-router.get('/managers/list', auth, async (req, res) => {
+router.get('/managers/list', auth, async (req: Request, res: Response) => {
   try {
     const managers = await EmployeeService.getManagers();
     res.json(managers);
@@ -144,4 +145,13 @@ router.get('/managers/list', auth, async (req, res) => {
   }
 });
 
+router.get('/avatar/:email', async (req: Request, res: Response ) => {
+  try {
+    const avatar = await EmployeeService.getAvatar(req.params.email);
+    res.json(avatar);
+  } catch (error: any) {
+    console.error('Get avatar error:', error);
+    res.status(500).json({ message: error.message });
+  }
+});
 export default router;

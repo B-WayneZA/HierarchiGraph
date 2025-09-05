@@ -72,9 +72,9 @@ userSchema.methods.comparePassword = async function(candidatePassword: string): 
 
 // Generate Gravatar URL
 userSchema.methods.getGravatarUrl = function(size: number = 200): string {
-  const hash = crypto.createHash('md5').update(this.email.toLowerCase().trim()).digest('hex');
+  const hash = crypto.createHash('sha256').update(this.email.toLowerCase().trim()).digest('hex');
   const defaultAvatar = process.env.GRAVATAR_DEFAULT || 'identicon';
-  return `https://www.gravatar.com/avatar/${hash}?s=${size}&d=${defaultAvatar}`;
+  return `https://www.gravatar.com/avatar/${hash}`;
 };
 
 export const User = mongoose.model<IUser>('User', userSchema);

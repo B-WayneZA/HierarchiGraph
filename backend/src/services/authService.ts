@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { User, IUser } from '../models/User';
+import { User } from '../models/User';
 
 export interface AuthResponse {
   token: string;
@@ -52,7 +52,7 @@ export class AuthService {
     return {
       token,
       user: {
-        id: user._id.toString(),
+        id: (user.id as unknown as { toString: () => string }).toString(),
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -88,7 +88,7 @@ export class AuthService {
     return {
       token,
       user: {
-        id: user._id.toString(),
+        id: (user.id as unknown as { toString: () => string }).toString(),
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -105,7 +105,7 @@ export class AuthService {
     }
 
     return {
-      id: user._id.toString(),
+      id: (user.id as unknown as { toString: () => string }).toString(),
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -123,7 +123,7 @@ export class AuthService {
     }
   }
 
-  private static generateToken(user: IUser): string {
+  private static generateToken(user: typeof User.prototype): string {
     const payload = {
       userId: user._id,
       email: user.email,
@@ -132,8 +132,8 @@ export class AuthService {
 
     return jwt.sign(
       payload,
-      process.env.JWT_SECRET || 'fallback-secret',
-      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+      process.env.JWT_SECRET ?? 'fallback-secret',
+      { expiresIn: process.env.JWT_EXPIRES_IN ?? '7d' } as jwt.SignOptions
     );
   }
 }

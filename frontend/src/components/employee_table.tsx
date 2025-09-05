@@ -1,12 +1,22 @@
-import React, { useState } from 'react';
-import Gravatar from './Gravatar';
+import React, { useState, FC } from 'react';
 
-const EmployeeTable = ({ employees, onEditEmployee, onDeleteEmployee }) => {
-  const [sortField, setSortField] = useState('employeeNumber');
-  const [sortDirection, setSortDirection] = useState('asc');
+type Employee = {
+  employeeNumber: number;
+  [key: string]: any;
+};
+
+type EmployeeTableProps = {
+  employees: Employee[];
+  onEditEmployee: (employee: Employee) => void;
+  onDeleteEmployee: (employee: Employee) => void;
+};
+
+const EmployeeTable: FC<EmployeeTableProps> = ({ employees, onEditEmployee, onDeleteEmployee }) => {
+  const [sortField, setSortField] = useState<string>('employeeNumber');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [filter, setFilter] = useState('');
 
-  const handleSort = (field) => {
+  const handleSort = (field: string) => {
     if (sortField === field) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -33,7 +43,7 @@ const EmployeeTable = ({ employees, onEditEmployee, onDeleteEmployee }) => {
     )
   );
 
-  const formatDate = (dateString) => {
+  const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString();
   };
 
@@ -78,7 +88,7 @@ const EmployeeTable = ({ employees, onEditEmployee, onDeleteEmployee }) => {
               <tr key={employee._id || employee.id}>
                 <td>{employee.employeeNumber}</td>
                 <td>
-                  <Gravatar email={employee.email} size={30} />
+                  <img src={employee.gravatarUrl} alt={`${employee.name} ${employee.surname}`} className="w-8 h-8 rounded-full" />
                 </td>
                 <td>{employee.name} {employee.surname}</td>
                 <td>{employee.position}</td>

@@ -177,18 +177,21 @@ export class EmployeeService {
 
     // Build hierarchy tree
     const buildTree = (employees: any[], managerId: any = null) => {
-      return employees
-        .filter(emp => emp.managerId?._id?.toString() === managerId?.toString())
-        .map(emp => ({
-          ...emp.toObject(),
-          gravatarUrl: emp.getGravatarUrl(),
-          children: buildTree(employees, emp._id)
-        }));
+      // Explicitly type the return value of buildTree as any[]
+      const buildTree = (employees: any[], managerId: any = null): any[] => {
+        return employees
+          .filter(emp => emp.managerId?._id?.toString() === managerId?.toString())
+          .map(emp => ({
+            ...emp.toObject(),
+            gravatarUrl: emp.getGravatarUrl(),
+            children: buildTree(employees, emp._id)
+          }));
+      };
+
+      return buildTree(employees);
     };
 
-    return buildTree(employees);
-  }
-
+  };
   static async getDepartments() {
     const departments = await Employee.distinct('department');
     return departments.filter(dept => dept).sort();
@@ -203,5 +206,10 @@ export class EmployeeService {
       ...manager.toObject(),
       gravatarUrl: manager.getGravatarUrl()
     }));
+  }
+
+  static async getAvatar(email: string) {
+    const employee = await Employee.findOne({ email });
+    return employee?.getGravatarUrl();
   }
 }
