@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Save, User, Mail, Building, DollarSign, Calendar } from 'lucide-react';
+import md5 from 'blueimp-md5';
 
 interface EmployeeFormData {
   employeeId: string;
@@ -100,7 +101,7 @@ const EmployeeForm: React.FC = () => {
 
   const generateGravatarUrl = (email: string) => {
     if (!email) return '';
-    const hash = require('crypto').createHash('sha256').update(email.toLowerCase().trim()).digest('hex');
+    const hash = md5(email.toLowerCase().trim());
     return `https://www.gravatar.com/avatar/${hash}`;
   };
 
@@ -186,8 +187,8 @@ const EmployeeForm: React.FC = () => {
                     placeholder="Enter email address"
                   />
                 </div>
-                {errors.email && (
-                  <p className="mt-1 text-sm text-red-600">{errors.email.message}</p>
+                {errors?.email && (
+                  <p className="mt-1 text-sm text-red-600">{errors?.email?.message}</p>
                 )}
               </div>
             </div>
@@ -215,8 +216,8 @@ const EmployeeForm: React.FC = () => {
                     placeholder="Enter first name"
                   />
                 </div>
-                {errors.firstName && (
-                  <p className="mt-1 text-sm text-red-600">{errors.firstName.message}</p>
+                {errors?.firstName && (
+                  <p className="mt-1 text-sm text-red-600">{errors?.firstName?.message}</p>
                 )}
               </div>
 
@@ -242,8 +243,8 @@ const EmployeeForm: React.FC = () => {
                     placeholder="Enter last name"
                   />
                 </div>
-                {errors.lastName && (
-                  <p className="mt-1 text-sm text-red-600">{errors.lastName.message}</p>
+                {errors?.lastName && (
+                  <p className="mt-1 text-sm text-red-600">{errors?.lastName?.message}</p>
                 )}
               </div>
             </div>
@@ -267,8 +268,8 @@ const EmployeeForm: React.FC = () => {
                     placeholder="Enter position"
                   />
                 </div>
-                {errors.position && (
-                  <p className="mt-1 text-sm text-red-600">{errors.position.message}</p>
+                {errors?.position && (
+                  <p className="mt-1 text-sm text-red-600">{errors?.position?.message}</p>
                 )}
               </div>
 
@@ -290,8 +291,8 @@ const EmployeeForm: React.FC = () => {
                     placeholder="Enter department"
                   />
                 </div>
-                {errors.department && (
-                  <p className="mt-1 text-sm text-red-600">{errors.department.message}</p>
+                {errors?.department && (
+                  <p className="mt-1 text-sm text-red-600">{errors?.department?.message}</p>
                 )}
               </div>
             </div>
@@ -320,8 +321,8 @@ const EmployeeForm: React.FC = () => {
                     placeholder="Enter salary"
                   />
                 </div>
-                {errors.salary && (
-                  <p className="mt-1 text-sm text-red-600">{errors.salary.message}</p>
+                {errors?.salary && (
+                  <p className="mt-1 text-sm text-red-600">{errors?.salary?.message}</p>
                 )}
               </div>
 
@@ -342,8 +343,8 @@ const EmployeeForm: React.FC = () => {
                     className="input-field pl-10"
                   />
                 </div>
-                {errors.hireDate && (
-                  <p className="mt-1 text-sm text-red-600">{errors.hireDate.message}</p>
+                {errors?.hireDate && (
+                  <p className="mt-1 text-sm text-red-600">{errors?.hireDate?.message}</p>
                 )}
               </div>
             </div>
@@ -352,7 +353,7 @@ const EmployeeForm: React.FC = () => {
               <label htmlFor="managerId" className="block text-sm font-medium text-gray-700">
                 Manager
               </label>
-              <div className="mt-1">
+              <div className="mt-1">  
                 <select
                   id="managerId"
                   {...register('managerId')}

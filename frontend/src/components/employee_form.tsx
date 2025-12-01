@@ -1,7 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ChangeEvent, FC } from 'react';
 
-const EmployeeForm = ({ employee, employees, onSubmit, onCancel }) => {
-  const [formData, setFormData] = useState({
+type Employee = {
+  employeeNumber?: string;
+  name?: string;
+  surname?: string;
+  birthDate?: string;
+  salary?: string;
+  position?: string;
+  email?: string;
+  managerId?: string;
+};
+
+type EmployeeFormProps = {
+  employee?: Employee;
+  employees: Employee[];
+  onSubmit: (employee: Employee) => void;
+  onCancel: () => void;
+};
+
+const EmployeeForm: FC<EmployeeFormProps> = ({ employee, employees, onSubmit, onCancel }) => {
+  const [formData, setFormData] = useState<Employee>({
     employeeNumber: '',
     name: '',
     surname: '',
@@ -12,7 +30,7 @@ const EmployeeForm = ({ employee, employees, onSubmit, onCancel }) => {
     managerId: ''
   });
 
-  const [errors, setErrors] = useState({});
+  const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     if (employee) {
@@ -40,7 +58,7 @@ const EmployeeForm = ({ employee, employees, onSubmit, onCancel }) => {
     }
   }, [employee]);
 
-  const handleChange = (e) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({
       ...prev,
@@ -48,7 +66,7 @@ const EmployeeForm = ({ employee, employees, onSubmit, onCancel }) => {
     }));
     
     // Clear error when field is edited
-    if (errors[name]) {
+    if (errors[name as keyof typeof errors]) {
       setErrors(prev => ({
         ...prev,
         [name]: ''
@@ -57,13 +75,13 @@ const EmployeeForm = ({ employee, employees, onSubmit, onCancel }) => {
   };
 
   const validateForm = () => {
-    const newErrors = {};
+    const newErrors: { [key: string]: string } = {};
     
     if (!formData.employeeNumber) newErrors.employeeNumber = 'Employee number is required';
     if (!formData.name) newErrors.name = 'Name is required';
     if (!formData.surname) newErrors.surname = 'Surname is required';
     if (!formData.birthDate) newErrors.birthDate = 'Birth date is required';
-    if (!formData.salary || formData.salary <= 0) newErrors.salary = 'Valid salary is required';
+    if (!formData.salary || parseFloat(formData.salary) <= 0) newErrors.salary = 'Valid salary is required';
     if (!formData.position) newErrors.position = 'Position is required';
     if (!formData.email || !/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'Valid email is required';
@@ -73,7 +91,7 @@ const EmployeeForm = ({ employee, employees, onSubmit, onCancel }) => {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     
     if (validateForm()) {
@@ -206,25 +224,14 @@ const EmployeeForm = ({ employee, employees, onSubmit, onCancel }) => {
           >
             <option value="">No Manager (CEO)</option>
             {employees
-              .filter(emp => !employee || emp._id !== employee._id)
+              .filter(emp => !employee || emp.employeeNumber !== employee.employeeNumber)
               .map(emp => (
-                <option key={emp._id || emp.id} value={emp._id || emp.id}>
+                <option key={emp.employeeNumber || emp.employeeNumber} value={emp.employeeNumber || emp.employeeNumber}>
                   {emp.name} {emp.surname} - {emp.position}
                 </option>
               ))}
-          </select>
+            </select>
         </div>
-      </div>
-
-      <div className="form-actions">
-        <button type="submit" className="btn-primary">
-          {employee ? 'Update Employee' : 'Add Employee'}
-        </button>
-        {employee && (
-          <button type="button" onClick={onCancel} className="btn-secondary">
-            Cancel
-          </button>
-        )}
       </div>
     </form>
   );

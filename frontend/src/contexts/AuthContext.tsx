@@ -35,6 +35,15 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+const mockUser: User = {
+  id: "1",
+  email: "mock@example.com",
+  firstName: "Mock",
+  lastName: "User",
+  role: "admin",
+  gravatarUrl: "https://www.gravatar.com/avatar/00000000000000000000000000000000"
+};
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,8 +62,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const token = localStorage.getItem('token');
       if (token) {
         try {
-          const response = await axios.get('/api/auth/me');
-          setUser(response.data.user);
+         // const response = await axios.get('/api/auth/me');
+  
+        setUser(mockUser);
+    
+          //setUser(response.data.user);
         } catch (error) {
           localStorage.removeItem('token');
           delete axios.defaults.headers.common['Authorization'];
@@ -68,12 +80,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const login = async (email: string, password: string) => {
     try {
-      const response = await axios.post('/api/auth/login', { email, password });
-      const { token, user } = response.data;
+      // const response = await axios.post('/api/auth/login', { email, password });
+      // const { token, user } = response.data;
       
-      localStorage.setItem('token', token);
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setUser(user);
+      // localStorage.setItem('token', token);
+      // axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      setUser(mockUser);
+      // setUser(user);
       
       toast.success('Login successful!');
     } catch (error: any) {

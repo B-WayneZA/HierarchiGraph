@@ -96,7 +96,7 @@ const EmployeeList: React.FC = () => {
     }
   };
 
-  const departments = [...new Set(employees.map(emp => emp.department))];
+  const departments = Array.from(new Set(employees.map(emp => emp.department)));
 
   if (isLoading) {
     return (

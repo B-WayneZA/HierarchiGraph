@@ -20,6 +20,7 @@ const Dashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    /*
     const fetchStats = async () => {
       try {
         const response = await axios.get('/api/employees');
@@ -45,6 +46,39 @@ const Dashboard: React.FC = () => {
     };
 
     fetchStats();
+    */
+
+      const fetchStats = async () => {
+        try {
+          // Mock employees data
+          const employees = [
+            { id: 1, name: "Alice", department: "Engineering", isActive: true, salary: 75000 },
+            { id: 2, name: "Bob", department: "HR", isActive: false, salary: 50000 },
+            { id: 3, name: "Charlie", department: "Engineering", isActive: true, salary: 80000 },
+            { id: 4, name: "Diana", department: "Finance", isActive: true, salary: 65000 },
+          ];
+    
+          const departments = new Set(employees.map(emp => emp.department));
+          const activeEmployees = employees.filter(emp => emp.isActive);
+          const avgSalary = employees.length > 0
+            ? employees.reduce((sum, emp) => sum + emp.salary, 0) / employees.length
+            : 0;
+    
+          setStats({
+            totalEmployees: employees.length,
+            activeEmployees: activeEmployees.length,
+            departments: departments.size,
+            avgSalary: Math.round(avgSalary),
+          });
+        } catch (error) {
+          console.error("Error fetching stats:", error);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+    
+      fetchStats();
+    
   }, []);
 
   const statCards = [

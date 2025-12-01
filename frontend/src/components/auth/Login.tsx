@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { useAuth } from '../../contexts/AuthContext';
 import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import md5 from 'blueimp-md5';
 
 interface LoginFormData {
   email: string;
@@ -38,7 +39,7 @@ const Login: React.FC = () => {
 
   const generateGravatarUrl = (email: string) => {
     if (!email) return '';
-    const hash = require('crypto').createHash('md5').update(email.toLowerCase().trim()).digest('hex');
+    const hash = md5(email.toLowerCase().trim());
     return `https://www.gravatar.com/avatar/${hash}?s=200&d=identicon`;
   };
 
@@ -61,7 +62,8 @@ const Login: React.FC = () => {
           {email && (
             <div className="flex justify-center mb-6">
               <img
-                src={generateGravatarUrl(email)}
+                // src={generateGravatarUrl(email)}
+                src=" "
                 alt="Avatar preview"
                 className="w-16 h-16 rounded-full border-2 border-gray-200"
               />
