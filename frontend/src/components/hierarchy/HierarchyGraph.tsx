@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import axios from 'axios';
-import { ZoomIn, ZoomOut, RotateCcw, Download } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
+import * as d3 from 'd3';
+
 
 interface Node {
   id: string;
@@ -25,58 +26,165 @@ interface GraphData {
 }
 
 const HierarchyGraph: React.FC = () => {
-  const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
-  const [isLoading, setIsLoading] = useState(true);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [ graphData, setGraphData ] = useState<GraphData>({ nodes: [], links: [] });
+  const [ isLoading, setIsLoading ] = useState(true);
+  const [ selectedNode, setSelectedNode ] = useState<Node | null>(null);
+
+  const graphRef = useRef<any>(null);
 
   useEffect(() => {
-    fetchHierarchyData();
+    mockFetchHierarchyData();
   }, []);
 
-  const fetchHierarchyData = async () => {
+  // -------------------------
+  // MOCKED EMPLOYEE HIERARCHY
+  // -------------------------
+  const MOCK_DATA = [
+    {
+      _id: "ceo1",
+      firstName: "Alice",
+      lastName: "Johnson",
+      position: "CEO",
+      department: "Executive",
+      gravatarUrl: "https://www.gravatar.com/avatar/00000000000000000000000000000001",
+      children: [
+        {
+          _id: "mgr1",
+          firstName: "Bob",
+          lastName: "Smith",
+          position: "Head of Engineering",
+          department: "Engineering",
+          gravatarUrl: "https://www.gravatar.com/avatar/00000000000000000000000000000002",
+          children: [
+            {
+              _id: "dev1",
+              firstName: "Charlie",
+              lastName: "Brown",
+              position: "Software Engineer",
+              department: "Engineering",
+              gravatarUrl: "https://www.gravatar.com/avatar/00000000000000000000000000000003",
+              children: []
+            },
+            {
+              _id: "dev2",
+              firstName: "Diana",
+              lastName: "Taylor",
+              position: "Software Engineer",
+              department: "Engineering",
+              gravatarUrl: "https://www.gravatar.com/avatar/00000000000000000000000000000004",
+              children: []
+            }
+          ]
+        },
+        {
+          _id: "mgr2",
+          firstName: "Ethan",
+          lastName: "Williams",
+          position: "Head of HR",
+          department: "Human Resources",
+          gravatarUrl: "https://www.gravatar.com/avatar/00000000000000000000000000000005",
+          children: [
+            {
+              _id: "hr1",
+              firstName: "Fiona",
+              lastName: "Adams",
+              position: "HR Consultant",
+              department: "Human Resources",
+              gravatarUrl: "https://www.gravatar.com/avatar/00000000000000000000000000000006",
+              children: []
+            }
+          ]
+        }
+      ]
+    }
+  ];
+
+  const mockFetchHierarchyData = async () => {
     try {
-      const response = await axios.get('/api/employees/hierarchy/tree');
-      const employees = response.data;
-      
+      const employees = MOCK_DATA;
+
       const nodes: Node[] = [];
       const links: Link[] = [];
+      const levelMap: Record<number, Node[]> = {};
 
-      // Convert tree data to graph format
+      // Build nodes & links, track hierarchy levels
       const processEmployee = (employee: any, level: number = 0) => {
-        nodes.push({
+        const node: Node = {
           id: employee._id,
           name: `${employee.firstName} ${employee.lastName}`,
           position: employee.position,
           department: employee.department,
           avatar: employee.gravatarUrl,
-          val: Math.max(20 - level * 2, 8) // Size based on hierarchy level
-        });
+          val: 12
+        };
+
+        nodes.push(node);
+        levelMap[ level ] = levelMap[ level ] || [];
+        levelMap[ level ].push(node);
 
         if (employee.children) {
           employee.children.forEach((child: any) => {
-            links.push({
-              source: employee._id,
-              target: child._id
-            });
+            links.push({ source: employee._id, target: child._id });
             processEmployee(child, level + 1);
           });
         }
       };
 
-      // Process all root employees (those without managers)
-      employees.forEach((employee: any) => {
-        if (!employee.managerId) {
-          processEmployee(employee);
-        }
+      employees.forEach(root => processEmployee(root));
+
+      // ------------------------------
+      // FORCE TRUE HIERARCHY POSITION
+      // ------------------------------
+      const VERTICAL_GAP = 150;
+      const HORIZONTAL_GAP = 180;
+
+      Object.keys(levelMap).forEach(levelStr => {
+        const level = Number(levelStr);
+        const row = levelMap[ level ];
+
+        const totalWidth = (row.length - 1) * HORIZONTAL_GAP;
+
+        row.forEach((node, index) => {
+          node.x = index * HORIZONTAL_GAP - totalWidth / 2;
+          node.y = level * VERTICAL_GAP;
+        });
       });
+
 
       setGraphData({ nodes, links });
     } catch (error) {
-      console.error('Error fetching hierarchy data:', error);
+      console.error("Mock fetch error:", error);
     } finally {
       setIsLoading(false);
     }
   };
+
+
+  useEffect(() => {
+    if (!graphRef.current) return;
+
+    const fg = graphRef.current;
+
+    fg.d3Force("charge", d3.forceManyBody().strength(-60));
+
+    fg.d3Force(
+      "link",
+      d3.forceLink()
+        .distance(90)
+        .strength(0.7)
+    );
+
+    fg.d3Force(
+      "y",
+      d3.forceY((node: Node, i: number, data: Node[]) => node.y ?? 0).strength(0.05)
+    );
+
+    fg.d3Force(
+      "x",
+      d3.forceX((node: Node, i: number, data: Node[]) => node.x ?? 0).strength(0.02)
+    );
+  }, [ ]);
+
 
   const handleNodeClick = useCallback((node: Node) => {
     setSelectedNode(node);
@@ -87,44 +195,32 @@ const HierarchyGraph: React.FC = () => {
   }, []);
 
   if (isLoading) {
-    return (
-      <div className="p-6">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 rounded w-1/4 mb-6"></div>
-          <div className="bg-white p-8 rounded-lg shadow-sm border border-gray-200">
-            <div className="h-64 bg-gray-200 rounded"></div>
-          </div>
-        </div>
-      </div>
-    );
+    return <div className="p-6 text-gray-700">Loading mock data...</div>;
   }
+
+  // Apply forces
 
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Organization Chart</h1>
-        <p className="text-gray-600 mt-2">Visual representation of your organization's hierarchy</p>
+        <h1 className="text-3xl font-bold text-gray-900">Organization Chart (Mocked)</h1>
+        <p className="text-gray-600 mt-2">This version uses mocked employee hierarchy data.</p>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
         <div className="p-4 border-b border-gray-200 bg-gray-50">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => {
-                  const fg = document.querySelector('canvas')?.parentElement?.querySelector('canvas');
-                  if (fg) {
-                    // Reset zoom
-                    fg.style.transform = 'scale(1) translate(0px, 0px)';
-                  }
-                }}
-                className="flex items-center px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
-              >
-                <RotateCcw className="h-4 w-4 mr-1" />
-                Reset
-              </button>
-            </div>
-            
+            <button
+              onClick={() => {
+                const fg = document.querySelector('canvas')?.parentElement?.querySelector('canvas');
+                if (fg) fg.style.transform = 'scale(1) translate(0px, 0px)';
+              }}
+              className="flex items-center px-3 py-1 text-sm text-gray-600 hover:text-gray-900"
+            >
+              <RotateCcw className="h-4 w-4 mr-1" />
+              Reset
+            </button>
+
             <div className="text-sm text-gray-600">
               {graphData.nodes.length} employees, {graphData.links.length} relationships
             </div>
@@ -134,19 +230,28 @@ const HierarchyGraph: React.FC = () => {
         <div className="relative h-96">
           <ForceGraph2D
             graphData={graphData}
+
+            // Smooth physics
+            d3AlphaDecay={0.01}
+            d3VelocityDecay={0.3}
+
+            // Soft repulsion is set using graphRef below; no need for d3Force here
+
+            nodeRelSize={6}
+            enableNodeDrag={true}
+            cooldownTicks={200}
+            onEngineStop={() => console.log("settled")}
             nodeLabel={(node: Node) => `
-              <div style="background: white; padding: 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                <div style="font-weight: bold; margin-bottom: 4px;">${node.name}</div>
-                <div style="font-size: 12px; color: #666;">${node.position}</div>
-                <div style="font-size: 12px; color: #666;">${node.department}</div>
+              <div style="background: blueviolet; padding: 8px; border-radius: 4px;">
+                <strong>${node.name}</strong><br/>
+                <span>${node.position}</span><br/>
+                <span>${node.department}</span>
               </div>
             `}
             nodeCanvasObject={(node: Node, ctx, globalScale) => {
               const label = node.name;
-              const fontSize = 12/globalScale;
+              const fontSize = 12 / globalScale;
               ctx.font = `${fontSize}px Inter`;
-              const textWidth = ctx.measureText(label).width;
-              const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
 
               // Draw avatar
               const img = new Image();
@@ -154,44 +259,26 @@ const HierarchyGraph: React.FC = () => {
               ctx.save();
               ctx.beginPath();
               ctx.arc(node.x!, node.y!, node.val, 0, 2 * Math.PI);
-              ctx.closePath();
               ctx.clip();
               ctx.drawImage(img, node.x! - node.val, node.y! - node.val, node.val * 2, node.val * 2);
               ctx.restore();
 
-              // Draw border
+              // Border
               ctx.beginPath();
               ctx.arc(node.x!, node.y!, node.val, 0, 2 * Math.PI);
               ctx.strokeStyle = selectedNode?.id === node.id ? '#3b82f6' : '#e5e7eb';
               ctx.lineWidth = 2;
               ctx.stroke();
 
-              // Draw label background
-              ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-              ctx.fillRect(
-                node.x! - bckgDimensions[0] / 2,
-                node.y! + node.val + 5,
-                bckgDimensions[0],
-                bckgDimensions[1]
-              );
-
-              // Draw label text
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillStyle = '#374151';
-              ctx.fillText(
-                label,
-                node.x!,
-                node.y! + node.val + 5 + bckgDimensions[1] / 2
-              );
+              // Name label
+              ctx.textAlign = "center";
+              ctx.fillStyle = "#000";
+              ctx.fillText(label, node.x!, node.y! + node.val + 12);
             }}
             linkColor={() => '#d1d5db'}
             linkWidth={1}
             onNodeClick={handleNodeClick}
             onBackgroundClick={handleBackgroundClick}
-            cooldownTicks={100}
-            nodeRelSize={6}
-            d3VelocityDecay={0.3}
           />
         </div>
 
@@ -211,9 +298,12 @@ const HierarchyGraph: React.FC = () => {
             </div>
           </div>
         )}
+
       </div>
     </div>
   );
+
+
 };
 
 export default HierarchyGraph;

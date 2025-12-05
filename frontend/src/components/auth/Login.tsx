@@ -62,8 +62,7 @@ const Login: React.FC = () => {
           {email && (
             <div className="flex justify-center mb-6">
               <img
-                // src={generateGravatarUrl(email)}
-                src=" "
+                src={generateGravatarUrl(email)}
                 alt="Avatar preview"
                 className="w-16 h-16 rounded-full border-2 border-gray-200"
               />
