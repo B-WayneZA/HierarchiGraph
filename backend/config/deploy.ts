@@ -8,8 +8,10 @@ export const deploymentConfig = {
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || 'production',
   
-  // MongoDB Configuration
-  mongoUri: process.env.MONGODB_URI,
+  // AWS Neptune Configuration
+  neptuneEndpoint: process.env.NEPTUNE_ENDPOINT,
+  neptunePort: process.env.NEPTUNE_PORT || '8182',
+  neptuneSsl: process.env.NEPTUNE_SSL === 'true',
   
   // JWT Configuration
   jwtSecret: process.env.JWT_SECRET,
@@ -48,7 +50,7 @@ export const deploymentConfig = {
 
 export const validateDeploymentConfig = () => {
   const required = [
-    'MONGODB_URI',
+    'NEPTUNE_ENDPOINT',
     'JWT_SECRET',
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY'

@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { User } from '../models/User';
+import { getGravatarUrl } from '../utils/gremlinHelpers';
 
 export interface AuthResponse {
   token: string;
@@ -37,28 +37,28 @@ export class AuthService {
     }
 
     // Create new user
-    const user = new User({
+    const user = await User.create({
       email,
       password,
       firstName,
-      lastName
+      lastName,
+      role: 'user',
+      isActive: true,
     });
 
-    await user.save();
-
     // Generate JWT token
-    const token = this.generateToken(user);
+    const token = this.generateToken(user!);
 
     return {
       token,
       user: {
-        id: (user.id as unknown as { toString: () => string }).toString(),
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role,
-        gravatarUrl: user.getGravatarUrl()
-      }
+        id: user!.id!,
+        email: user!.email,
+        firstName: user!.firstName,
+        lastName: user!.lastName,
+        role: user!.role,
+        gravatarUrl: user!.gravatarUrl || getGravatarUrl(user!.email),
+      },
     };
   }
 
@@ -77,7 +77,7 @@ export class AuthService {
     }
 
     // Verify password
-    const isPasswordValid = await user.comparePassword(password);
+    const isPasswordValid = await User.comparePassword(user.id!, password);
     if (!isPasswordValid) {
       throw new Error('Invalid credentials');
     }
@@ -88,29 +88,32 @@ export class AuthService {
     return {
       token,
       user: {
-        id: (user.id as unknown as { toString: () => string }).toString(),
+        id: user.id!,
         email: user.email,
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
-        gravatarUrl: user.getGravatarUrl()
-      }
+        gravatarUrl: user.gravatarUrl || getGravatarUrl(user.email),
+      },
     };
   }
 
   static async getCurrentUser(userId: string) {
-    const user = await User.findById(userId).select('-password');
+    const user = await User.findOne({ email: userId });
     if (!user) {
       throw new Error('User not found');
     }
 
+    // Remove password from response
+    const { password, ...userWithoutPassword } = user!;
+
     return {
-      id: (user.id as unknown as { toString: () => string }).toString(),
+      id: user.id!,
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,
-      gravatarUrl: user.getGravatarUrl()
+      gravatarUrl: user.gravatarUrl || getGravatarUrl(user.email),
     };
   }
 
@@ -123,11 +126,11 @@ export class AuthService {
     }
   }
 
-  private static generateToken(user: typeof User.prototype): string {
+  private static generateToken(user: { id?: string; email: string; role: string }): string {
     const payload = {
-      userId: user._id,
+      userId: user.id,
       email: user.email,
-      role: user.role
+      role: user.role,
     };
 
     return jwt.sign(
