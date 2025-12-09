@@ -7,7 +7,7 @@ on:
 env:
   AWS_REGION: eu-north-1
   ECR_REPOSITORY: hierarchigraph-backend
-  ECS_SERVICE: hierarchigraph-service
+  ECS_SERVICE: hierarchigraph-taskdefinition-service-5x54uowh
   ECS_CLUSTER: hierarchigraph-cluster
   ECS_TASK_DEFINITION: .aws/task-def.json
   CONTAINER_NAME: hierarchigraph-container
