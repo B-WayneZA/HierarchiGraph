@@ -1,80 +1,139 @@
-import mongoose, { Document, Schema } from 'mongoose';
+import { getGraphTraversal } from '../config/database';
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
+import { getGravatarUrl } from '../utils/gremlinHelpers';
 
-export interface IUser extends Document {
+export interface IUser {
+  id?: string;
   email: string;
   password: string;
   firstName: string;
   lastName: string;
   role: 'admin' | 'user';
   isActive: boolean;
-  createdAt: Date;
-  updatedAt: Date;
-  comparePassword(candidatePassword: string): Promise<boolean>;
-  getGravatarUrl(size?: number): string;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
+  gravatarUrl?: string;
 }
 
-const userSchema = new Schema<IUser>({
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-    lowercase: true,
-    trim: true,
-    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please enter a valid email']
-  },
-  password: {
-    type: String,
-    required: true,
-    minlength: 6
-  },
-  firstName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  lastName: {
-    type: String,
-    required: true,
-    trim: true
-  },
-  role: {
-    type: String,
-    enum: ['admin', 'user'],
-    default: 'user'
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  }
-}, {
-  timestamps: true
-});
+export class User {
+  /**
+  /**
+   * Create a new user vertex in the graph
+   */
+  static async create(data: Partial<IUser>): Promise<IUser | null> {
+    const g = getGraphTraversal();
+    const now = new Date().toISOString();
 
-// Hash password before saving
-userSchema.pre('save', async function(next) {
-  if (!this.isModified('password')) return next();
-  
-  try {
+    // Hash password
     const salt = await bcrypt.genSalt(12);
-    this.password = await bcrypt.hash(this.password, salt);
-    next();
-  } catch (error) {
-    next(error as Error);
+    const hashedPassword = await bcrypt.hash(data.password!, salt);
+
+    const vertex = await g
+      .addV('User')
+      .property('email', data.email!.toLowerCase().trim())
+      .property('password', hashedPassword)
+      .property('firstName', data.firstName!)
+      .property('lastName', data.lastName!)
+      .property('role', data.role || 'user')
+      .property('isActive', data.isActive !== undefined ? data.isActive : true)
+      .property('createdAt', now)
+      .property('updatedAt', now)
+      .next();
+
+    const user = await this.findOne({ email: data.email!.toLowerCase().trim() });
+    if (!user) {
+      throw new Error('Failed to create user');
+    }
+    return user!;
   }
-});
 
-// Compare password method
-userSchema.methods.comparePassword = async function(candidatePassword: string): Promise<boolean> {
-  return bcrypt.compare(candidatePassword, this.password);
-};
+  /**
+   * Find user by email
+   */
+  static async findOne(query: { email?: string }): Promise<IUser | null> {
+    const g = getGraphTraversal();
+    let traversal = g.V().hasLabel('User');
 
-// Generate Gravatar URL
-userSchema.methods.getGravatarUrl = function(size: number = 200): string {
-  const hash = crypto.createHash('sha256').update(this.email.toLowerCase().trim()).digest('hex');
-  const defaultAvatar = process.env.GRAVATAR_DEFAULT || 'identicon';
-  return `https://www.gravatar.com/avatar/${hash}`;
-};
+    if (query.email) {
+      traversal = traversal.has('email', query.email.toLowerCase().trim());
+    }
 
-export const User = mongoose.model<IUser>('User', userSchema);
+    const result = await traversal.valueMap(true).toList();
+    if (result.length === 0) return null;
+
+    return this.vertexToUser(result[0]);
+  }
+
+  /**
+   * Update user vertex
+   */
+  static async updateById(id: string, data: Partial<IUser>): Promise<IUser | null> {
+    const g = getGraphTraversal();
+    let traversal = g.V(id).hasLabel('User');
+
+    // Hash password if it's being updated
+    if (data.password) {
+      const salt = await bcrypt.genSalt(12);
+      data.password = await bcrypt.hash(data.password, salt);
+    }
+
+    // Update properties
+    for (const [key, value] of Object.entries(data)) {
+      if (key !== 'id' && key !== 'createdAt' && value !== undefined) {
+        if (key === 'email') {
+          traversal = traversal.property(key, (value as string).toLowerCase().trim());
+        } else {
+          traversal = traversal.property(key, value);
+        }
+      }
+    }
+
+    traversal = traversal.property('updatedAt', new Date().toISOString());
+    await traversal.next();
+
+    const user = await this.findOne({ email: data.email!.toLowerCase().trim() });
+    if (!user) {
+      throw new Error('Failed to update user');
+    }
+    return user!;
+  }
+
+  /**
+   * Compare password
+   */
+  static async comparePassword(userId: string, candidatePassword: string): Promise<boolean> {
+    const user = await this.findOne({ email: userId });
+    if (!user) return false;
+    
+    return bcrypt.compare(candidatePassword, user.password);
+  }
+
+  /**
+   * Convert Gremlin vertex to User object
+   */
+  private static vertexToUser(vertex: any): IUser {
+    const user: any = {
+      id: vertex.id.toString(),
+    };
+
+    // Extract properties
+    if (vertex.properties) {
+      for (const [key, values] of Object.entries(vertex.properties)) {
+        if (Array.isArray(values) && values.length > 0) {
+          const value = values[0].value;
+          // Parse dates
+          if (key === 'createdAt' || key === 'updatedAt') {
+            user[key] = new Date(value);
+          } else {
+            user[key] = value;
+          }
+        }
+      }
+    }
+
+    // Add computed properties
+    user.gravatarUrl = getGravatarUrl(user.email);
+
+    return user as IUser;
+  }
+}

@@ -111,7 +111,7 @@ router.delete('/:id', adminAuth, async (req: Request, res: Response) => {
 // @access  Private
 router.get('/hierarchy/tree', auth, async (req: Request, res: Response) => {
   try {
-    const hierarchyTree = await EmployeeService.getHierarchyTree();
+    const hierarchyTree = await EmployeeService.getHierarchyGraphData();
     res.json(hierarchyTree);
   } catch (error: any) {
     console.error('Get hierarchy tree error:', error);

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { RotateCcw } from 'lucide-react';
 import * as d3 from 'd3';
+import axios from 'axios';
 
 
 interface Node {
@@ -34,8 +35,21 @@ const HierarchyGraph: React.FC = () => {
 
   useEffect(() => {
     mockFetchHierarchyData();
+
+
+    // api 
+   // fetchHierarchyData();
   }, []);
 
+  const fetchHierarchyData = async () => {
+    try {
+      const response = await axios.get('/api/employees/hierarchy/tree');
+      setGraphData(response.data);
+    } catch (error) {
+      console.error("Fetch hierarchy data error:", error);
+    }
+  };
+  
   // -------------------------
   // MOCKED EMPLOYEE HIERARCHY
   // -------------------------

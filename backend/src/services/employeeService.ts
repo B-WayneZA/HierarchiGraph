@@ -1,5 +1,6 @@
 import { Employee, IEmployee } from '../models/Employee';
-import mongoose from 'mongoose';
+import { getGraphTraversal } from '../config/database';
+import { getGravatarUrl } from '../utils/gremlinHelpers';
 
 export interface CreateEmployeeData {
   employeeId: string;
@@ -39,29 +40,38 @@ export class EmployeeService {
     if (filters.isActive !== undefined) query.isActive = filters.isActive;
     if (filters.managerId) query.managerId = filters.managerId;
 
-    const employees = await Employee.find(query)
-      .populate('managerId', 'firstName lastName email position')
-      .populate('subordinates', 'firstName lastName email position')
-      .sort({ firstName: 1, lastName: 1 });
+    const employees = await Employee.find(query);
 
-    return employees.map(emp => ({
-      ...emp.toObject(),
-      gravatarUrl: emp.getGravatarUrl()
-    }));
+    // Populate manager and subordinates for each employee
+    const employeesWithRelations = await Promise.all(
+      employees.map(async (emp) => {
+        const employee = await Employee.findById(emp.id!);
+        const populated = await this.populateEmployeeRelations(employee!);
+        return {
+          ...populated,
+          gravatarUrl: populated.gravatarUrl || getGravatarUrl(populated.email),
+        };
+      })
+    );
+
+    // Sort by firstName, lastName
+    return employeesWithRelations.sort((a, b) => {
+      const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
+      const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
   }
 
   static async getEmployeeById(id: string) {
-    const employee = await Employee.findById(id)
-      .populate('managerId', 'firstName lastName email position')
-      .populate('subordinates', 'firstName lastName email position');
-
+    const employee = await Employee.findById(id);
     if (!employee) {
       throw new Error('Employee not found');
     }
 
+    const populated = await this.populateEmployeeRelations(employee);
     return {
-      ...employee.toObject(),
-      gravatarUrl: employee.getGravatarUrl()
+      ...populated,
+      gravatarUrl: populated.gravatarUrl || getGravatarUrl(populated.email),
     };
   }
 
@@ -79,27 +89,16 @@ export class EmployeeService {
     }
 
     // Create new employee
-    const employee = new Employee({
+    const employee = await Employee.create({
       ...data,
-      managerId: data.managerId || null
+      managerId: data.managerId || null,
+      isActive: true,
     });
 
-    await employee.save();
-
-    // Update manager's subordinates if managerId is provided
-    if (data.managerId) {
-      await Employee.findByIdAndUpdate(
-        data.managerId,
-        { $push: { subordinates: employee._id } }
-      );
-    }
-
-    const savedEmployee = await Employee.findById(employee._id)
-      .populate('managerId', 'firstName lastName email position');
-
+    const populated = await this.populateEmployeeRelations(employee);
     return {
-      ...savedEmployee!.toObject(),
-      gravatarUrl: savedEmployee!.getGravatarUrl()
+      ...populated,
+      gravatarUrl: populated.gravatarUrl || getGravatarUrl(populated.email),
     };
   }
 
@@ -111,35 +110,34 @@ export class EmployeeService {
 
     const oldManagerId = employee.managerId;
 
-    // Update employee
-    const updatedEmployee = await Employee.findByIdAndUpdate(
-      id,
-      data,
-      { new: true, runValidators: true }
-    ).populate('managerId', 'firstName lastName email position');
+    // Update employee properties (excluding managerId)
+    const updateData: any = { ...data };
+    delete updateData.managerId;
+
+    const updatedEmployee = await Employee.updateById(id, updateData);
 
     // Handle manager change
-    if (data.managerId !== oldManagerId) {
-      // Remove from old manager's subordinates
+    if (data.managerId !== undefined && data.managerId !== oldManagerId) {
+      // Remove from old manager's subordinates (handled by edge removal)
       if (oldManagerId) {
-        await Employee.findByIdAndUpdate(
-          oldManagerId,
-          { $pull: { subordinates: employee._id } }
-        );
+        // Edge will be removed when we add new one
       }
 
       // Add to new manager's subordinates
       if (data.managerId) {
-        await Employee.findByIdAndUpdate(
-          data.managerId,
-          { $push: { subordinates: employee._id } }
-        );
+        await Employee.addManagerRelationship(id, data.managerId);
+      } else {
+        // Remove manager relationship
+        const g = getGraphTraversal();
+        await g.V(id).inE('MANAGES').drop().iterate();
       }
     }
 
+    const finalEmployee = await Employee.findById(id);
+    const populated = await this.populateEmployeeRelations(finalEmployee!);
     return {
-      ...updatedEmployee!.toObject(),
-      gravatarUrl: updatedEmployee!.getGravatarUrl()
+      ...populated,
+      gravatarUrl: populated.gravatarUrl || getGravatarUrl(populated.email),
     };
   }
 
@@ -149,67 +147,140 @@ export class EmployeeService {
       throw new Error('Employee not found');
     }
 
-    // Remove from manager's subordinates
-    if (employee.managerId) {
-      await Employee.findByIdAndUpdate(
-        employee.managerId,
-        { $pull: { subordinates: employee._id } }
-      );
-    }
-
-    // Reassign subordinates to the employee's manager
-    if (employee.subordinates.length > 0) {
-      await Employee.updateMany(
-        { _id: { $in: employee.subordinates } },
-        { managerId: employee.managerId }
-      );
-    }
-
-    await Employee.findByIdAndDelete(id);
+    await Employee.deleteById(id);
     return { message: 'Employee deleted successfully' };
   }
 
-  static async getHierarchyTree() {
-    const employees = await Employee.find({ isActive: true })
-      .populate('managerId', 'firstName lastName email position')
-      .populate('subordinates', 'firstName lastName email position')
-      .sort({ firstName: 1, lastName: 1 });
+  static async getHierarchyGraphData() {
+    const g = getGraphTraversal();
 
-    // Build hierarchy tree
-    const buildTree = (employees: any[], managerId: any = null) => {
-      // Explicitly type the return value of buildTree as any[]
-      const buildTree = (employees: any[], managerId: any = null): any[] => {
-        return employees
-          .filter(emp => emp.managerId?._id?.toString() === managerId?.toString())
-          .map(emp => ({
-            ...emp.toObject(),
-            gravatarUrl: emp.getGravatarUrl(),
-            children: buildTree(employees, emp._id)
-          }));
+    // 1. Get all employees
+    const vertices = await g.V().hasLabel("Employee").valueMap(true).toList();
+
+    // 2. Create map by id
+    const map: Record<string, any> = {};
+    vertices.forEach((v: any) => {
+      map[ v.id ] = {
+        _id: v.id,
+        firstName: v.properties.firstName[ 0 ],
+        lastName: v.properties.lastName[ 0 ],
+        position: v.properties.position[ 0 ],
+        department: v.properties.department[ 0 ],
+        email: v.properties.email[ 0 ],
+        gravatarUrl: getGravatarUrl(v.properties.email[ 0 ]),
+        children: []
       };
+    });
 
-      return buildTree(employees);
-    };
+    // 3. Query all management edges (MANAGES)
+    const edges = await g.E().hasLabel("MANAGES").toList();
 
-  };
+    // Build children relationships
+    edges.forEach((edge: any) => {
+      const managerId = edge.outV.id;
+      const employeeId = edge.inV.id;
+
+      if (map[ managerId ] && map[ employeeId ]) {
+        map[ managerId ].children.push(map[ employeeId ]);
+        map[ employeeId ].managerId = managerId;
+      }
+    });
+
+    // 4. Return only roots (employees with no manager)
+    return Object.values(map).filter((emp: any) => !emp.managerId);
+  }
+
   static async getDepartments() {
     const departments = await Employee.distinct('department');
     return departments.filter(dept => dept).sort();
   }
 
   static async getManagers() {
-    const managers = await Employee.find({ isActive: true })
-      .select('firstName lastName email position')
-      .sort({ firstName: 1, lastName: 1 });
+    const g = getGraphTraversal();
 
-    return managers.map(manager => ({
-      ...manager.toObject(),
-      gravatarUrl: manager.getGravatarUrl()
-    }));
+    // Get all employees who manage others (have outgoing MANAGES edges)
+    const managerIds = await g
+      .V()
+      .hasLabel('Employee')
+      .has('isActive', true)
+      .where(g.outE('MANAGES'))
+      .id()
+      .dedup()
+      .toList();
+
+    const allManagerIds = [ ...new Set(managerIds.map((id: any) => id.toString())) ];
+
+    const managers = await Promise.all(
+      allManagerIds.map(async (id: any) => {
+        const emp = await Employee.findById(id.toString());
+        if (!emp) return null;
+        return {
+          id: emp.id,
+          firstName: emp.firstName,
+          lastName: emp.lastName,
+          email: emp.email,
+          position: emp.position,
+          gravatarUrl: getGravatarUrl(emp.email),
+        };
+      })
+    );
+
+    return managers.filter(m => m !== null).sort((a, b) => {
+      const nameA = `${a!.firstName} ${a!.lastName}`.toLowerCase();
+      const nameB = `${b!.firstName} ${b!.lastName}`.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
   }
 
   static async getAvatar(email: string) {
     const employee = await Employee.findOne({ email });
-    return employee?.getGravatarUrl();
+    return employee ? getGravatarUrl(email) : null;
+  }
+
+  /**
+   * Populate manager and subordinates for an employee
+   */
+  private static async populateEmployeeRelations(employee: IEmployee): Promise<any> {
+    const g = getGraphTraversal();
+    const result: any = { ...employee };
+
+    // Get manager
+    if (employee.id) {
+      const managerResult = await g
+        .V(employee.id)
+        .inE('MANAGES')
+        .outV()
+        .valueMap(true)
+        .toList();
+
+      if (managerResult.length > 0) {
+        const managerVertex = managerResult[ 0 ];
+        result.managerId = {
+          id: managerVertex.id.toString(),
+          firstName: managerVertex.properties?.firstName?.[ 0 ]?.value,
+          lastName: managerVertex.properties?.lastName?.[ 0 ]?.value,
+          email: managerVertex.properties?.email?.[ 0 ]?.value,
+          position: managerVertex.properties?.position?.[ 0 ]?.value,
+        };
+      }
+
+      // Get subordinates
+      const subordinatesResult = await g
+        .V(employee.id)
+        .outE('MANAGES')
+        .inV()
+        .valueMap(true)
+        .toList();
+
+      result.subordinates = subordinatesResult.map((subVertex: any) => ({
+        id: subVertex.id.toString(),
+        firstName: subVertex.properties?.firstName?.[ 0 ]?.value,
+        lastName: subVertex.properties?.lastName?.[ 0 ]?.value,
+        email: subVertex.properties?.email?.[ 0 ]?.value,
+        position: subVertex.properties?.position?.[ 0 ]?.value,
+      }));
+    }
+
+    return result;
   }
 }

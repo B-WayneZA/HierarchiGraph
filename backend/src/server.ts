@@ -13,8 +13,11 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to MongoDB
-connectDB();
+// Connect to AWS Neptune
+connectDB().catch((error) => {
+  console.error('Failed to connect to Neptune:', error);
+  process.exit(1);
+});
 
 // Middleware
 app.use(helmet({
@@ -86,8 +89,8 @@ app.get('/api', (req, res) => {
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('❌ Server error:', err);
   
-  // MongoDB connection errors
-  if (err.name === 'MongoNetworkError') {
+  // Database connection errors
+  if (err.message && err.message.includes('Database not connected')) {
     return res.status(503).json({ 
       message: 'Database connection error. Please try again later.',
       error: process.env.NODE_ENV === 'development' ? err.message : 'Database error'
@@ -95,10 +98,10 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   }
 
   // Validation errors
-  if (err.name === 'ValidationError') {
+  if (err.name === 'ValidationError' || err.message?.includes('Validation error')) {
     return res.status(400).json({ 
       message: 'Validation error',
-      errors: Object.values(err.errors).map((e: any) => e.message)
+      errors: err.errors ? Object.values(err.errors).map((e: any) => e.message) : [err.message]
     });
   }
 
