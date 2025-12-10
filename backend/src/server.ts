@@ -31,15 +31,27 @@ app.use(helmet({
   },
 }));
 
+const allowedOrigins = [
+  'http://localhost:3000',
+  process.env.FRONTEND_URL     // CloudFront domain
+];
+
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['http://13.60.163.88']  // Your EC2 IP
-    : ['http://localhost:3000'],
+  origin: (origin, callback) => {
+    // Allow REST tools and server-to-server communication
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
-
 }));
+
 app.use(morgan('combined'));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));

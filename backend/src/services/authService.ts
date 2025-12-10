@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
-import { getGravatarUrl } from '../utils/gremlinHelpers';
+import { getGravatarUrl, getTraversal } from '../utils/gremlinHelpers';
 
 export interface AuthResponse {
   token: string;
@@ -140,3 +140,30 @@ export class AuthService {
     );
   }
 }
+
+
+export const getUserById = async (id: string) => {
+  const g = getTraversal();
+
+  const result = await g.V(id)
+    .hasLabel("user")
+    .valueMap(true)  // include id and all properties
+    .next();
+
+  if (result.done || !result.value) return null;
+
+  const raw = result.value;
+
+  // Convert Neptune valueMap format
+  const user = {
+    id: raw.id,
+    isActive: raw.value.isActive?.[0] ?? false,
+    email: raw.value.email?.[0] ?? null,
+    firstName: raw.value.firstName?.[0] ?? "",
+    lastName: raw.value.lastName?.[0] ?? "",
+    password: raw.value.password?.[0] ?? null
+  };
+
+  return user;
+};
+

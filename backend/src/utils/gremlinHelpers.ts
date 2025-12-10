@@ -82,3 +82,16 @@ export const vertexExistsByProperty = async (
   return count.value > 0;
 };
 
+import gremlin from 'gremlin';
+
+const DriverRemoteConnection = gremlin.driver.DriverRemoteConnection;
+const Graph = gremlin.structure.Graph;
+
+export const getTraversal = () => {
+  const dc = new DriverRemoteConnection(process.env.NEPTUNE_ENDPOINT!, {
+    mimeType: 'application/vnd.gremlin-v2.0+json'
+  });
+
+  const graph = new Graph();
+  return graph.traversal().withRemote(dc);
+};

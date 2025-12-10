@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
+import { getUserById } from '../services/authService';
 
 interface AuthRequest extends Request {
   user?: any;
@@ -16,13 +17,14 @@ export const auth = async (req: AuthRequest, res: Response, next: NextFunction):
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as any;
-    const user = await User.findById(decoded.userId).select('-password');
+    const user = await getUserById(decoded.userId);
     
     if (!user || !user.isActive) {
       res.status(401).json({ message: 'Token is not valid' });
       return;
     }
 
+    delete user.password; // remove sensitve information
     req.user = user;
     next();
   } catch (error) {
