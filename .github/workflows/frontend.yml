@@ -38,6 +38,11 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: ${{ secrets.AWS_REGION }}
 
+    - name: Debug S3
+      run: |
+        echo "Bucket: $S3_BUCKET"
+        aws s3 ls
+
     - name: Sync build to S3
       working-directory: ./frontend
       run: |
