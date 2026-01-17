@@ -121,6 +121,25 @@ export class AuthService {
     };
   }
 
+  static async getUserById(userId: string) {
+    const user = await User.findById(userId);
+    if (!user) {
+      return null;
+    }
+
+    // Remove password from response
+    const { password, ...userWithoutPassword } = user!;
+
+    return {
+      id: user.id!,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role,
+      gravatarUrl: user.gravatarUrl || getGravatarUrl(user.email),
+    };
+  }
+  
   static async validateToken(token: string): Promise<any> {
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as any;
