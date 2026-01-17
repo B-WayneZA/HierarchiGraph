@@ -17,7 +17,6 @@ A modern, cloud-hosted application for managing organizational employee hierarch
 ### Backend
 - **Node.js** with TypeScript
 - **Express.js** for API framework
-- **MongoDB** with Mongoose ODM
 - **JWT** for authentication
 - **bcryptjs** for password hashing
 - **Express Validator** for input validation
@@ -35,7 +34,6 @@ A modern, cloud-hosted application for managing organizational employee hierarch
 ## Prerequisites
 
 - Node.js (v16 or higher)
-- MongoDB (v4.4 or higher)
 - npm or yarn
 
 ## Installation
@@ -51,32 +49,6 @@ cd HierarchiGraph
 cd backend
 npm install
 ```
-
-#### MongoDB Setup Options:
-
-**Option A: Local MongoDB**
-```env
-MONGODB_URI=mongodb://localhost:27017/hierarchigraph
-```
-
-**Option B: MongoDB Atlas (Recommended)**
-1. Follow the [MongoDB Atlas Setup Guide](backend/MONGODB_ATLAS_SETUP.md)
-2. Create a `.env` file with your Atlas connection string:
-```env
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/hierarchigraph?retryWrites=true&w=majority
-```
-
-#### Complete Environment Configuration:
-Create a `.env` file in the backend directory:
-```env
-# Server Configuration
-PORT=5000
-NODE_ENV=development
-
-# MongoDB Configuration (Choose one)
-MONGODB_URI=mongodb://localhost:27017/hierarchigraph
-# OR for MongoDB Atlas:
-# MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/hierarchigraph?retryWrites=true&w=majority
 
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
@@ -232,7 +204,7 @@ The application is configured for deployment on AWS EC2 with production-ready se
 
 2. **Run Setup Script**
    ```bash
-   curl -O https://raw.githubusercontent.com/your-repo/hierarchigraph/main/deploy/ec2-setup.sh
+   curl -O https://raw.githubusercontent.com//hierarchigraph/main/deploy/ec2-setup.sh
    chmod +x ec2-setup.sh
    ./ec2-setup.sh
    ```
@@ -264,7 +236,6 @@ JWT_SECRET=your-development-secret
 #### Production
 ```env
 NODE_ENV=production
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/hierarchigraph
 JWT_SECRET=your-production-jwt-secret
 CORS_ORIGINS=https://your-domain.com
 ```
