@@ -1,6 +1,6 @@
 import { Employee, IEmployee } from '../models/Employee';
-import { getGraphTraversal } from '../config/database';
-import { getGravatarUrl } from '../utils/gremlinHelpers';
+import { getDriver } from '../config/database';
+import { getGravatarUrl } from '../utils/dbHelpers';
 
 export interface CreateEmployeeData {
   employeeId: string;
@@ -46,6 +46,7 @@ export class EmployeeService {
     const employeesWithRelations = await Promise.all(
       employees.map(async (emp) => {
         const employee = await Employee.findById(emp.id!);
+        if (!employee) return null;
         const populated = await this.populateEmployeeRelations(employee!);
         return {
           ...populated,
@@ -54,8 +55,12 @@ export class EmployeeService {
       })
     );
 
+    const validEmployees = employeesWithRelations.filter((e) => e !== null) as (IEmployee & {
+      gravatarUrl: string;
+    })[];
+
     // Sort by firstName, lastName
-    return employeesWithRelations.sort((a, b) => {
+    return validEmployees.sort((a, b) => {
       const nameA = `${a.firstName} ${a.lastName}`.toLowerCase();
       const nameB = `${b.firstName} ${b.lastName}`.toLowerCase();
       return nameA.localeCompare(nameB);
@@ -91,7 +96,6 @@ export class EmployeeService {
     // Create new employee
     const employee = await Employee.create({
       ...data,
-      managerId: data.managerId || null,
       isActive: true,
     });
 
@@ -114,22 +118,25 @@ export class EmployeeService {
     const updateData: any = { ...data };
     delete updateData.managerId;
 
-    const updatedEmployee = await Employee.updateById(id, updateData);
+    await Employee.updateById(id, updateData);
 
     // Handle manager change
     if (data.managerId !== undefined && data.managerId !== oldManagerId) {
-      // Remove from old manager's subordinates (handled by edge removal)
-      if (oldManagerId) {
-        // Edge will be removed when we add new one
-      }
-
       // Add to new manager's subordinates
       if (data.managerId) {
         await Employee.addManagerRelationship(id, data.managerId);
       } else {
         // Remove manager relationship
-        const g = getGraphTraversal();
-        await g.V(id).inE('MANAGES').drop().iterate();
+        const driver = getDriver();
+        const session = driver.session();
+        try {
+          await session.run(
+            `MATCH (:Employee)-[r:MANAGES]->(e:Employee {id: $id}) DELETE r`,
+            { id }
+          );
+        } finally {
+          await session.close();
+        }
       }
     }
 
@@ -152,42 +159,48 @@ export class EmployeeService {
   }
 
   static async getHierarchyGraphData() {
-    const g = getGraphTraversal();
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (e:Employee)
+        OPTIONAL MATCH (m:Employee)-[:MANAGES]->(e)
+        RETURN e, m.id as managerId
+      `);
 
-    // 1. Get all employees
-    const vertices = await g.V().hasLabel("Employee").valueMap(true).toList();
+      const nodes = result.records.map((record) => {
+        const employee = record.get('e').properties;
+        return {
+          _id: employee.id,
+          firstName: employee.firstName,
+          lastName: employee.lastName,
+          position: employee.position,
+          department: employee.department,
+          email: employee.email,
+          gravatarUrl: getGravatarUrl(employee.email),
+          managerId: record.get('managerId'),
+          children: [],
+        };
+      });
 
-    // 2. Create map by id
-    const map: Record<string, any> = {};
-    vertices.forEach((v: any) => {
-      map[ v.id ] = {
-        _id: v.id,
-        firstName: v.properties.firstName[ 0 ],
-        lastName: v.properties.lastName[ 0 ],
-        position: v.properties.position[ 0 ],
-        department: v.properties.department[ 0 ],
-        email: v.properties.email[ 0 ],
-        gravatarUrl: getGravatarUrl(v.properties.email[ 0 ]),
-        children: []
-      };
-    });
+      const map: Record<string, any> = {};
+      nodes.forEach((node) => {
+        map[node._id] = node;
+      });
 
-    // 3. Query all management edges (MANAGES)
-    const edges = await g.E().hasLabel("MANAGES").toList();
+      const roots: any[] = [];
+      nodes.forEach((node) => {
+        if (node.managerId && map[node.managerId]) {
+          map[node.managerId].children.push(node);
+        } else {
+          roots.push(node);
+        }
+      });
 
-    // Build children relationships
-    edges.forEach((edge: any) => {
-      const managerId = edge.outV.id;
-      const employeeId = edge.inV.id;
-
-      if (map[ managerId ] && map[ employeeId ]) {
-        map[ managerId ].children.push(map[ employeeId ]);
-        map[ employeeId ].managerId = managerId;
-      }
-    });
-
-    // 4. Return only roots (employees with no manager)
-    return Object.values(map).filter((emp: any) => !emp.managerId);
+      return roots;
+    } finally {
+      await session.close();
+    }
   }
 
   static async getDepartments() {
@@ -196,40 +209,30 @@ export class EmployeeService {
   }
 
   static async getManagers() {
-    const g = getGraphTraversal();
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (m:Employee)-[:MANAGES]->(:Employee)
+        WHERE m.isActive = true
+        RETURN DISTINCT m
+        ORDER BY m.firstName, m.lastName
+      `);
 
-    // Get all employees who manage others (have outgoing MANAGES edges)
-    const managerIds = await g
-      .V()
-      .hasLabel('Employee')
-      .has('isActive', true)
-      .where(g.outE('MANAGES'))
-      .id()
-      .dedup()
-      .toList();
-
-    const allManagerIds = [ ...new Set(managerIds.map((id: any) => id.toString())) ];
-
-    const managers = await Promise.all(
-      allManagerIds.map(async (id: any) => {
-        const emp = await Employee.findById(id.toString());
-        if (!emp) return null;
+      return result.records.map((record) => {
+        const manager = record.get('m').properties;
         return {
-          id: emp.id,
-          firstName: emp.firstName,
-          lastName: emp.lastName,
-          email: emp.email,
-          position: emp.position,
-          gravatarUrl: getGravatarUrl(emp.email),
+          id: manager.id,
+          firstName: manager.firstName,
+          lastName: manager.lastName,
+          email: manager.email,
+          position: manager.position,
+          gravatarUrl: getGravatarUrl(manager.email),
         };
-      })
-    );
-
-    return managers.filter(m => m !== null).sort((a, b) => {
-      const nameA = `${a!.firstName} ${a!.lastName}`.toLowerCase();
-      const nameB = `${b!.firstName} ${b!.lastName}`.toLowerCase();
-      return nameA.localeCompare(nameB);
-    });
+      });
+    } finally {
+      await session.close();
+    }
   }
 
   static async getAvatar(email: string) {
@@ -241,44 +244,48 @@ export class EmployeeService {
    * Populate manager and subordinates for an employee
    */
   private static async populateEmployeeRelations(employee: IEmployee): Promise<any> {
-    const g = getGraphTraversal();
+    const driver = getDriver();
+    const session = driver.session();
     const result: any = { ...employee };
 
-    // Get manager
-    if (employee.id) {
-      const managerResult = await g
-        .V(employee.id)
-        .inE('MANAGES')
-        .outV()
-        .valueMap(true)
-        .toList();
+    try {
+      if (employee.id) {
+        // Get manager
+        const managerResult = await session.run(
+          `MATCH (m:Employee)-[:MANAGES]->(e:Employee {id: $id}) RETURN m`,
+          { id: employee.id }
+        );
 
-      if (managerResult.length > 0) {
-        const managerVertex = managerResult[ 0 ];
-        result.managerId = {
-          id: managerVertex.id.toString(),
-          firstName: managerVertex.properties?.firstName?.[ 0 ]?.value,
-          lastName: managerVertex.properties?.lastName?.[ 0 ]?.value,
-          email: managerVertex.properties?.email?.[ 0 ]?.value,
-          position: managerVertex.properties?.position?.[ 0 ]?.value,
-        };
+        if (managerResult.records.length > 0) {
+          const managerNode = managerResult.records[0].get('m').properties;
+          result.managerId = {
+            id: managerNode.id,
+            firstName: managerNode.firstName,
+            lastName: managerNode.lastName,
+            email: managerNode.email,
+            position: managerNode.position,
+          };
+        }
+
+        // Get subordinates
+        const subordinatesResult = await session.run(
+          `MATCH (e:Employee {id: $id})-[:MANAGES]->(s:Employee) RETURN s`,
+          { id: employee.id }
+        );
+
+        result.subordinates = subordinatesResult.records.map((record) => {
+          const subNode = record.get('s').properties;
+          return {
+            id: subNode.id,
+            firstName: subNode.firstName,
+            lastName: subNode.lastName,
+            email: subNode.email,
+            position: subNode.position,
+          };
+        });
       }
-
-      // Get subordinates
-      const subordinatesResult = await g
-        .V(employee.id)
-        .outE('MANAGES')
-        .inV()
-        .valueMap(true)
-        .toList();
-
-      result.subordinates = subordinatesResult.map((subVertex: any) => ({
-        id: subVertex.id.toString(),
-        firstName: subVertex.properties?.firstName?.[ 0 ]?.value,
-        lastName: subVertex.properties?.lastName?.[ 0 ]?.value,
-        email: subVertex.properties?.email?.[ 0 ]?.value,
-        position: subVertex.properties?.position?.[ 0 ]?.value,
-      }));
+    } finally {
+      await session.close();
     }
 
     return result;

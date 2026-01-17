@@ -1,97 +1,48 @@
-import * as gremlin from 'gremlin';
+import neo4j, { Driver } from 'neo4j-driver';
 import dotenv from 'dotenv';
-
-const { DriverRemoteConnection } = gremlin.driver;
-const { Graph } = gremlin.structure;
 
 dotenv.config();
 
-// AWS Neptune Configuration
-const NEPTUNE_ENDPOINT = process.env.NEPTUNE_ENDPOINT || 'localhost';
-const NEPTUNE_PORT = parseInt(process.env.NEPTUNE_PORT || '8182', 10);
-const NEPTUNE_SSL = process.env.NEPTUNE_SSL === 'true';
-const NEPTUNE_REGION = process.env.AWS_REGION || 'us-east-1';
+const NEO4J_URI = process.env.NEO4J_URI;
+const NEO4J_USER = process.env.NEO4J_USER;
+const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD;
 
-let connection: typeof DriverRemoteConnection | null = null;
-let graph: typeof Graph | null = null;
-let g: any = null;
+let driver: Driver | null = null;
 
 export const connectDB = async (): Promise<void> => {
+  if (!NEO4J_URI || !NEO4J_USER || !NEO4J_PASSWORD) {
+    console.error('❌ Neo4j connection details are missing in environment variables.');
+    process.exit(1);
+  }
+
   try {
-    const connectionOptions: any = {
-      endpoint: NEPTUNE_ENDPOINT,
-      port: NEPTUNE_PORT,
-      ssl: NEPTUNE_SSL,
-    };
-
-    // If using AWS Neptune (not local), add AWS credentials
-    if (NEPTUNE_SSL && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-      connectionOptions.region = NEPTUNE_REGION;
-      connectionOptions.accessKeyId = process.env.AWS_ACCESS_KEY_ID;
-      connectionOptions.secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY;
-    }
-
-    const protocol = NEPTUNE_SSL ? 'wss' : 'ws';
-    connection = new (DriverRemoteConnection as any)(
-      `${protocol}://${NEPTUNE_ENDPOINT}:${NEPTUNE_PORT}/gremlin`,
-      connectionOptions
-    );
-
-    graph = new (Graph as any)();
-    if (!connection) {
-      throw new Error('Failed to initialize Gremlin connection');
-    }
-    // DriverRemoteConnection expects the raw instance, not the type
-    g = (graph as any).traversal().withRemote(connection as any);
-
-    // Test connection: make sure the graph traversal works (will throw if not)
-    await g.V().limit(1).toList();
-
-    console.log('✅ AWS Neptune connected successfully');
-    console.log(`📊 Endpoint: ${NEPTUNE_ENDPOINT}:${NEPTUNE_PORT}`);
-    console.log(`🔒 SSL: ${NEPTUNE_SSL}`);
+    driver = neo4j.driver(NEO4J_URI, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
+    await driver.verifyConnectivity();
+    console.log('✅ Neo4j Aura connected successfully');
+    console.log(`📊 Database: ${NEO4J_URI}`);
   } catch (error) {
-    console.error('❌ Neptune connection error:', error);
+    console.error('❌ Neo4j connection error:', error);
     process.exit(1);
   }
 };
 
 export const disconnectDB = async (): Promise<void> => {
   try {
-    if (connection) {
-      // The close() method does not exist on DriverRemoteConnection. Use open and close if available, or simply drop the reference.
-      if (typeof (connection as any).close === 'function') {
-        await (connection as any).close();
-      }
-      connection = null;
-      graph = null;
-      g = null;
-      console.log('✅ Neptune disconnected successfully');
+    if (driver) {
+      await driver.close();
+      driver = null;
+      console.log('✅ Neo4j disconnected successfully');
     }
   } catch (error) {
-    console.error('❌ Neptune disconnection error:', error);
+    console.error('❌ Neo4j disconnection error:', error);
   }
 };
 
-export const getGraphTraversal = () => {
-  if (!g) {
+export const getDriver = (): Driver => {
+  if (!driver) {
     throw new Error('Database not connected. Call connectDB() first.');
   }
-  return g;
-};
-
-export const getGraph = (): typeof Graph => {
-  if (!graph || !connection) {
-    throw new Error('Database not connected. Call connectDB() first.');
-  }
-  return graph;
-};
-
-export const getConnection = (): typeof DriverRemoteConnection => {
-  if (!connection) {
-    throw new Error('Database not connected. Call connectDB() first.');
-  }
-  return connection;
+  return driver;
 };
 
 // Graceful shutdown

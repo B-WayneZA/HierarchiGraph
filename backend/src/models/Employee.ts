@@ -1,5 +1,6 @@
-import { getGraphTraversal } from '../config/database';
-import { vertexToObject, getGravatarUrl } from '../utils/gremlinHelpers';
+import { getDriver } from '../config/database';
+import { getGravatarUrl } from '../utils/dbHelpers';
+import { QueryResult, Record as Neo4jRecord } from 'neo4j-driver';
 
 export interface IEmployee {
   id?: string;
@@ -19,263 +20,276 @@ export interface IEmployee {
   fullName?: string;
 }
 
-export interface EmployeeVertex extends IEmployee {
-  subordinates?: string[];
-}
-
 export class Employee {
   /**
-   * Create a new employee vertex in the graph
+   * Create a new employee node in the graph
    */
   static async create(data: Partial<IEmployee>): Promise<IEmployee> {
-    const g = getGraphTraversal();
+    const driver = getDriver();
+    const session = driver.session();
     const now = new Date().toISOString();
 
-    const vertex = await g
-      .addV('Employee')
-      .property('employeeId', data.employeeId!)
-      .property('firstName', data.firstName!)
-      .property('lastName', data.lastName!)
-      .property('email', data.email!.toLowerCase().trim())
-      .property('position', data.position!)
-      .property('department', data.department!)
-      .property('hireDate', data.hireDate ? new Date(data.hireDate).toISOString() : now)
-      .property('salary', data.salary!)
-      .property('isActive', data.isActive !== undefined ? data.isActive : true)
-      .property('createdAt', now)
-      .property('updatedAt', now)
-      .next();
+    try {
+      const result = await session.run(
+        `
+        CREATE (e:Employee {
+          id: randomUUID(),
+          employeeId: $employeeId,
+          firstName: $firstName,
+          lastName: $lastName,
+          email: $email,
+          position: $position,
+          department: $department,
+          hireDate: $hireDate,
+          salary: $salary,
+          isActive: $isActive,
+          createdAt: $createdAt,
+          updatedAt: $updatedAt
+        })
+        RETURN e
+      `,
+        {
+          employeeId: data.employeeId,
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email!.toLowerCase().trim(),
+          position: data.position,
+          department: data.department,
+          hireDate: data.hireDate ? new Date(data.hireDate).toISOString() : now,
+          salary: data.salary,
+          isActive: data.isActive !== undefined ? data.isActive : true,
+          createdAt: now,
+          updatedAt: now,
+        }
+      );
 
-    const employee = await this.findById(vertex.value.id.toString());
-    
-    // Create manager relationship if managerId is provided
-    if (data.managerId) {
-      await this.addManagerRelationship(vertex.value.id.toString(), data.managerId);
+      const newEmployee = result.records[0].get('e').properties;
+
+      if (data.managerId) {
+        await this.addManagerRelationship(newEmployee.id, data.managerId);
+      }
+
+      return (await this.findById(newEmployee.id))!;
+    } finally {
+      await session.close();
     }
-
-    return employee!;
   }
 
   /**
    * Find employee by ID
    */
   static async findById(id: string): Promise<IEmployee | null> {
-    const g = getGraphTraversal();
-    const result = await g
-      .V(id)
-      .hasLabel('Employee')
-      .valueMap(true)
-      .toList();
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      const result = await session.run(
+        `
+        MATCH (e:Employee {id: $id})
+        OPTIONAL MATCH (m:Employee)-[:MANAGES]->(e)
+        RETURN e, m.id AS managerId
+      `,
+        { id }
+      );
 
-    if (result.length === 0) return null;
+      if (result.records.length === 0) return null;
 
-    const vertex = result[0];
-    const employee = this.vertexToEmployee(vertex);
+      const record = result.records[0];
+      const employeeNode = record.get('e').properties;
+      const managerId = record.get('managerId');
 
-    // Get manager
-    const managerResult = await g
-      .V(id)
-      .inE('MANAGES')
-      .outV()
-      .valueMap(true)
-      .toList();
-
-    if (managerResult.length > 0) {
-      employee.managerId = managerResult[0].id.toString();
+      return this.nodeToEmployee(employeeNode, managerId);
+    } finally {
+      await session.close();
     }
-
-    return employee;
   }
 
   /**
    * Find employee by property
    */
   static async findOne(query: { [key: string]: any }): Promise<IEmployee | null> {
-    const g = getGraphTraversal();
-    let traversal = g.V().hasLabel('Employee');
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      const queryParts = Object.keys(query).map((key) => `e.${key} = $${key}`);
+      const queryString = `MATCH (e:Employee) WHERE ${queryParts.join(' AND ')} RETURN e LIMIT 1`;
 
-    for (const [key, value] of Object.entries(query)) {
-      traversal = traversal.has(key, value);
+      const result = await session.run(queryString, query);
+
+      if (result.records.length === 0) return null;
+
+      return this.nodeToEmployee(result.records[0].get('e').properties);
+    } finally {
+      await session.close();
     }
-
-    const result = await traversal.valueMap(true).toList();
-    if (result.length === 0) return null;
-
-    return this.vertexToEmployee(result[0]);
   }
 
   /**
    * Find all employees matching query
    */
   static async find(query: { [key: string]: any } = {}): Promise<IEmployee[]> {
-    const g = getGraphTraversal();
-    let traversal = g.V().hasLabel('Employee');
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      let whereClauses: string[] = [];
+      let cypherQuery = 'MATCH (e:Employee)';
 
-    if (query.department) {
-      traversal = traversal.has('department', query.department);
-    }
-    if (query.isActive !== undefined) {
-      traversal = traversal.has('isActive', query.isActive);
-    }
-    if (query.managerId) {
-      // Find employees who have a manager edge from the specified manager
-      const managerEmployees = await g
-        .V(query.managerId)
-        .outE('MANAGES')
-        .inV()
-        .id()
-        .toList();
-      
-      if (managerEmployees.length === 0) {
-        return [];
+      if (query.department) {
+        whereClauses.push('e.department = $department');
       }
-      
-      // Get employees by their IDs
-      const employeeIds = managerEmployees.map((id: any) => id.toString());
-      const employees = await Promise.all(
-        employeeIds.map(async (id: string) => {
-          const result = await g.V(id).hasLabel('Employee').valueMap(true).toList();
-          return result.length > 0 ? this.vertexToEmployee(result[0]) : null;
-        })
-      );
-      
-      return employees.filter(emp => emp !== null) as IEmployee[];
-    }
+      if (query.isActive !== undefined) {
+        whereClauses.push('e.isActive = $isActive');
+      }
+      if (query.managerId) {
+        cypherQuery += `\nMATCH (:Employee {id: $managerId})-[:MANAGES]->(e)`;
+      }
 
-    // If we already returned early (managerId case), this won't execute
-    const result = await traversal.valueMap(true).toList();
-    return result.map((v: any) => this.vertexToEmployee(v));
+      if (whereClauses.length > 0) {
+        cypherQuery += `\nWHERE ${whereClauses.join(' AND ')}`;
+      }
+
+      cypherQuery += '\nRETURN e';
+
+      const result = await session.run(cypherQuery, query);
+      return result.records.map((record) => this.nodeToEmployee(record.get('e').properties));
+    } finally {
+      await session.close();
+    }
   }
 
   /**
-   * Update employee vertex
+   * Update employee node
    */
   static async updateById(id: string, data: Partial<IEmployee>): Promise<IEmployee | null> {
-    const g = getGraphTraversal();
-    let traversal = g.V(id).hasLabel('Employee');
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      const propertiesToUpdate = { ...data };
+      delete propertiesToUpdate.id;
+      delete propertiesToUpdate.managerId;
+      delete propertiesToUpdate.createdAt;
 
-    // Update properties
-    for (const [key, value] of Object.entries(data)) {
-      if (key !== 'id' && key !== 'managerId' && key !== 'createdAt' && value !== undefined) {
-        if (key === 'email') {
-          traversal = traversal.property(key, (value as string).toLowerCase().trim());
-        } else if (key === 'hireDate') {
-          traversal = traversal.property(key, new Date(value as string).toISOString());
-        } else {
-          traversal = traversal.property(key, value);
-        }
+      if (Object.keys(propertiesToUpdate).length === 0) {
+        return this.findById(id);
       }
+
+      const result = await session.run(
+        `
+        MATCH (e:Employee {id: $id})
+        SET e += $props, e.updatedAt = $updatedAt
+        RETURN e
+      `,
+        {
+          id,
+          props: propertiesToUpdate,
+          updatedAt: new Date().toISOString(),
+        }
+      );
+
+      if (result.records.length === 0) return null;
+
+      return this.findById(id);
+    } finally {
+      await session.close();
     }
-
-    traversal = traversal.property('updatedAt', new Date().toISOString());
-    await traversal.next();
-
-    return this.findById(id);
   }
 
   /**
-   * Delete employee vertex and its relationships
+   * Delete employee node and its relationships
    */
   static async deleteById(id: string): Promise<void> {
-    const g = getGraphTraversal();
-    
-    // Get subordinates before deletion
-    const subordinates = await g
-      .V(id)
-      .outE('MANAGES')
-      .inV()
-      .id()
-      .toList();
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      // Reassign subordinates to the deleted employee's manager
+      await session.run(
+        `
+        MATCH (manager:Employee)-[:MANAGES]->(deleted:Employee {id: $id})-[:MANAGES]->(subordinate:Employee)
+        MERGE (manager)-[:MANAGES]->(subordinate)
+      `,
+        { id }
+      );
 
-    // Reassign subordinates to the employee's manager
-    const managerResult = await g
-      .V(id)
-      .inE('MANAGES')
-      .outV()
-      .id()
-      .toList();
-
-    const managerId = managerResult.length > 0 ? managerResult[0].toString() : null;
-
-    // Update subordinates' manager relationships
-    for (const subId of subordinates) {
-      // Remove old manager relationship (find edge from manager to subordinate)
-      const edges = await g.V(id).outE('MANAGES').where(g.inV().hasId(subId.toString())).id().toList();
-      for (const edgeId of edges) {
-        await g.E(edgeId.toString()).drop().iterate();
-      }
-      
-      // Add new manager relationship if manager exists
-      if (managerId) {
-        await g.V(subId.toString()).addE('MANAGES').to(g.V(managerId)).next();
-      } else {
-        // Remove manager relationship if no manager
-        await g.V(subId.toString()).inE('MANAGES').drop().iterate();
-      }
+      // Detach and delete the employee
+      await session.run(
+        `
+        MATCH (e:Employee {id: $id})
+        DETACH DELETE e
+      `,
+        { id }
+      );
+    } finally {
+      await session.close();
     }
-
-    // Remove all edges
-    await g.V(id).bothE().drop().iterate();
-    
-    // Delete vertex
-    await g.V(id).drop().iterate();
   }
 
   /**
    * Add manager relationship (edge)
    */
   static async addManagerRelationship(employeeId: string, managerId: string): Promise<void> {
-    const g = getGraphTraversal();
-    
-    // Remove existing manager relationship if any
-    await g.V(employeeId).inE('MANAGES').drop().iterate();
-    
-    // Add new manager relationship
-    await g.V(employeeId).addE('MANAGES').to(g.V(managerId)).next();
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      // Remove existing manager relationship
+      await session.run(
+        `
+        MATCH (e:Employee {id: $employeeId})-[r:MANAGES]->()
+        DELETE r
+      `,
+        { employeeId }
+      );
+
+      // Add new manager relationship
+      await session.run(
+        `
+        MATCH (e:Employee {id: $employeeId})
+        MATCH (m:Employee {id: $managerId})
+        MERGE (m)-[:MANAGES]->(e)
+      `,
+        { employeeId, managerId }
+      );
+    } finally {
+      await session.close();
+    }
   }
 
   /**
    * Get distinct departments
    */
   static async distinct(field: string): Promise<string[]> {
-    const g = getGraphTraversal();
-    const result = await g
-      .V()
-      .hasLabel('Employee')
-      .values(field)
-      .dedup()
-      .toList();
-    
-    return result.filter((dept: any) => dept).sort();
+    const driver = getDriver();
+    const session = driver.session();
+    try {
+      const result = await session.run(`
+        MATCH (e:Employee)
+        RETURN collect(DISTINCT e.${field}) AS values
+      `);
+      return result.records[0].get('values').filter((v: any) => v).sort();
+    } finally {
+      await session.close();
+    }
   }
 
   /**
-   * Convert Gremlin vertex to Employee object
+   * Convert Neo4j Node to Employee object
    */
-  private static vertexToEmployee(vertex: any): IEmployee {
-    const employee: any = {
-      id: vertex.id.toString(),
+  private static nodeToEmployee(properties: any, managerId: string | null = null): IEmployee {
+    const employee: IEmployee = {
+      id: properties.id,
+      employeeId: properties.employeeId,
+      firstName: properties.firstName,
+      lastName: properties.lastName,
+      email: properties.email,
+      position: properties.position,
+      department: properties.department,
+      hireDate: new Date(properties.hireDate),
+      salary: Number(properties.salary),
+      isActive: properties.isActive,
+      createdAt: new Date(properties.createdAt),
+      updatedAt: new Date(properties.updatedAt),
+      managerId: managerId,
+      fullName: `${properties.firstName} ${properties.lastName}`,
+      gravatarUrl: getGravatarUrl(properties.email),
     };
-
-    // Extract properties
-    if (vertex.properties) {
-      for (const [key, values] of Object.entries(vertex.properties)) {
-        if (Array.isArray(values) && values.length > 0) {
-          const value = values[0].value;
-          // Parse dates
-          if (key === 'hireDate' || key === 'createdAt' || key === 'updatedAt') {
-            employee[key] = new Date(value);
-          } else {
-            employee[key] = value;
-          }
-        }
-      }
-    }
-
-    // Add computed properties
-    employee.fullName = `${employee.firstName} ${employee.lastName}`;
-    employee.gravatarUrl = getGravatarUrl(employee.email);
-
-    return employee as IEmployee;
+    return employee;
   }
 }

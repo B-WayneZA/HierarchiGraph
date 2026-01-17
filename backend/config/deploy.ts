@@ -8,10 +8,10 @@ export const deploymentConfig = {
   port: process.env.PORT || 5000,
   nodeEnv: process.env.NODE_ENV || 'production',
   
-  // AWS Neptune Configuration
-  neptuneEndpoint: process.env.NEPTUNE_ENDPOINT,
-  neptunePort: process.env.NEPTUNE_PORT || '8182',
-  neptuneSsl: process.env.NEPTUNE_SSL === 'true',
+  // Neo4j Aura Configuration
+  neo4jUri: process.env.NEO4J_URI,
+  neo4jUser: process.env.NEO4J_USER,
+  neo4jPassword: process.env.NEO4J_PASSWORD,
   
   // JWT Configuration
   jwtSecret: process.env.JWT_SECRET,
@@ -50,7 +50,9 @@ export const deploymentConfig = {
 
 export const validateDeploymentConfig = () => {
   const required = [
-    'NEPTUNE_ENDPOINT',
+    'NEO4J_URI',
+    'NEO4J_USER',
+    'NEO4J_PASSWORD',
     'JWT_SECRET',
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY'

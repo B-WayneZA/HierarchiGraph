@@ -1,6 +1,6 @@
 # HierarchiGraph - Employee Hierarchy Management System
 
-A modern, cloud-hosted application for managing organizational employee hierarchies. Built with TypeScript, React, Node.js, and MongoDB.
+A modern, cloud-hosted application for managing organizational employee hierarchies. Built with TypeScript, React, Node.js, and Neo4j Aura.
 
 ## Features
 
@@ -17,6 +17,7 @@ A modern, cloud-hosted application for managing organizational employee hierarch
 ### Backend
 - **Node.js** with TypeScript
 - **Express.js** for API framework
+- **Neo4j Aura** as the graph database
 - **JWT** for authentication
 - **bcryptjs** for password hashing
 - **Express Validator** for input validation
@@ -53,6 +54,11 @@ npm install
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
 JWT_EXPIRES_IN=7d
+
+# Neo4j Aura Configuration
+NEO4J_URI=neo4j+s://your-aura-instance.databases.neo4j.io
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your-aura-password
 
 # Gravatar Configuration
 GRAVATAR_DEFAULT=identicon
@@ -107,6 +113,17 @@ npm start
 
 ## Database Schema
 
+The application uses a graph model with Neo4j.
+
+### Nodes
+- `(:User)`: Represents an application user.
+  - Properties: `email`, `password`, `firstName`, `lastName`, `role`, `isActive`, `createdAt`, `updatedAt`
+- `(:Employee)`: Represents an employee in the organization.
+  - Properties: `employeeId`, `firstName`, `lastName`, `email`, `position`, `department`, `hireDate`, `salary`, `isActive`, `createdAt`, `updatedAt`
+
+### Relationships
+- `(manager:Employee)-[:MANAGES]->(employee:Employee)`: Represents the reporting line.
+
 ### User Model
 ```typescript
 {
@@ -132,8 +149,7 @@ npm start
   department: string;
   hireDate: Date;
   salary: number;
-  managerId?: ObjectId;
-  subordinates: ObjectId[];
+  managerId?: string; // ID of the manager Employee node
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -229,13 +245,18 @@ See [AWS EC2 Deployment Guide](deploy/README.md) for complete instructions.
 #### Development
 ```env
 NODE_ENV=development
-MONGODB_URI=mongodb://localhost:27017/hierarchigraph
+NEO4J_URI=neo4j+s://your-dev-aura-instance.databases.neo4j.io
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your-dev-aura-password
 JWT_SECRET=your-development-secret
 ```
 
 #### Production
 ```env
 NODE_ENV=production
+NEO4J_URI=neo4j+s://your-prod-aura-instance.databases.neo4j.io
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your-prod-aura-password
 JWT_SECRET=your-production-jwt-secret
 CORS_ORIGINS=https://your-domain.com
 ```

@@ -13,9 +13,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Connect to AWS Neptune
+// Connect to Neo4j Aura
 connectDB().catch((error) => {
-  console.error('Failed to connect to Neptune:', error);
+  console.error('Failed to connect to Neo4j:', error);
   process.exit(1);
 });
 
