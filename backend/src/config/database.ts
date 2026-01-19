@@ -1,16 +1,17 @@
 import neo4j, { Driver } from 'neo4j-driver';
-import AWS from 'aws-sdk';
+import { SecretsManagerClient, GetSecretValueCommand } from "@aws-sdk/client-secrets-manager";
+
 import dotenv from 'dotenv';
 
 dotenv.config();
 
-const client = new AWS.SecretsManager({
+const client = new SecretsManagerClient({
   region: "eu-north-1",
 }); 
 const secret_name = "Neo4j";
 
 async function getNeo4jSecrets() {
-  const secret = await client.getSecretValue({ SecretId: secret_name }).promise();
+  const secret = await client.send(new GetSecretValueCommand({ SecretId: secret_name }));
   return JSON.parse(secret.SecretString!);
 }
 
